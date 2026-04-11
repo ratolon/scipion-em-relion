@@ -25,6 +25,7 @@
 # **************************************************************************
 
 from enum import Enum
+from collections import defaultdict
 
 from pyworkflow.object import String, Integer
 from pyworkflow.constants import PROD
@@ -211,9 +212,56 @@ class ProtRelionSubtract(ProtOperateParticles, ProtRelionBase):
         else:
             imgSet = self.inputParticlesAll.get()
 
+        kwargs = {
+            'outputDir': self._getExtraPath(),
+            'alignType': ALIGN_PROJ
+        }
+
+        if self._isRelionInput():
+            kwargs['extraLabels'] = ['rlnClassNumber', 'rlnRandomSubset']
+
+            # Split-sets subsets may lose Relion-specific labels. Recover class/
+            # subset assignments from the source Relion particles by objId or
+            # image location so relion_particle_subtract can select projectors.
+            if not self.useAll:
+                kwargs['postprocessImageRow'] = self._postprocessSubsetRow
+                self._subsetRelionLabels = self._collectSubsetRelionLabels()
+
         convert.writeSetOfParticles(
-            imgSet, self._getFileName('input_star'),
-            outputDir=self._getExtraPath(), alignType=ALIGN_PROJ)
+            imgSet, self._getFileName('input_star'), **kwargs)
+
+    def _postprocessSubsetRow(self, part, row):
+        labels = getattr(self, '_subsetRelionLabels', {})
+        candidates = labels.get(part.getObjId(), [])
+
+        if not candidates:
+            candidates = labels.get(part.getLocation(), [])
+
+        if candidates:
+            rlnClassNumber, rlnRandomSubset = candidates[0]
+            row['rlnClassNumber'] = rlnClassNumber
+            if rlnRandomSubset is not None:
+                row['rlnRandomSubset'] = rlnRandomSubset
+
+    def _collectSubsetRelionLabels(self):
+        labels = defaultdict(list)
+        if not self._isRelionInput() or self.useAll:
+            return labels
+
+        inputParts = self._getInputParticles()
+        for part in inputParts:
+            classNumber = part.getAttributeValue('_rlnClassNumber', None)
+            if classNumber is None:
+                continue
+
+            randomSubset = part.getAttributeValue('_rlnRandomSubset', None)
+            data = (int(classNumber),
+                    int(randomSubset) if randomSubset is not None else None)
+
+            labels[part.getObjId()].append(data)
+            labels[part.getLocation()].append(data)
+
+        return labels
 
     def subtractStep(self):
         if self._isRelionInput():
