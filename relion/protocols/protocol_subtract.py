@@ -197,7 +197,7 @@ class ProtRelionSubtract(ProtOperateParticles, ProtRelionBase):
         self.isRelionInput = self.relionInput.get()
         self._initialize()
 
-        if not self.useAll or not self.isRelionInput:
+        if not self.useAll.get() or not self._isRelionInput():
             self._insertFunctionStep(self.convertInputStep, needsGPU=False)
 
         self._insertFunctionStep(self.subtractStep, needsGPU=False)
@@ -206,7 +206,7 @@ class ProtRelionSubtract(ProtOperateParticles, ProtRelionBase):
     # -------------------------- STEPS functions ------------------------------
     def convertInputStep(self):
         """ Write the input images as a Relion star file. """
-        if self.isRelionInput:
+        if self._isRelionInput():
             imgSet = self.inputParticles.get()
         else:
             imgSet = self.inputParticlesAll.get()
@@ -216,7 +216,7 @@ class ProtRelionSubtract(ProtOperateParticles, ProtRelionBase):
             outputDir=self._getExtraPath(), alignType=ALIGN_PROJ)
 
     def subtractStep(self):
-        if self.isRelionInput:
+        if self._isRelionInput():
             self.subtractStepRelion()
         else:
             self.subtractStepNoRelion()
@@ -229,9 +229,9 @@ class ProtRelionSubtract(ProtOperateParticles, ProtRelionBase):
         params += ' --angpix %0.3f' % volume.getSamplingRate()
         params += self._convertMask(resize=False, invert=True)
 
-        if self.doCTF:
+        if self.doCTF.get():
             params += ' --ctf'
-            if self.ignoreCTFUntilFirstPeak:
+            if self.ignoreCTFUntilFirstPeak.get():
                 params += ' --ctf_intact_first_peak'
             if self._getInputParticles().isPhaseFlipped():
                 params += ' --ctf_phase_flip'
@@ -251,15 +251,15 @@ class ProtRelionSubtract(ProtOperateParticles, ProtRelionBase):
                                                   self._getExtraPath(),
                                                   self.newBoxSize.get())
 
-        if not self.useAll:
+        if not self.useAll.get():
             params += " --data %s" % self._getFileName('input_star')
-        if self.centerOnMask:
+        if self.centerOnMask.get():
             params += " --recenter_on_mask"
-        elif self.centerOnCoord:
+        elif self.centerOnCoord.get():
             params += " --center_x %d --center_y %d --center_z %d" % (
-                self.cX, self.cY, self.cZ)
+                self.cX.get(), self.cY.get(), self.cZ.get())
 
-        if self.saveFloat16:
+        if self.saveFloat16.get():
             params += " --float16"
 
         params += self._convertMask()
@@ -287,12 +287,12 @@ class ProtRelionSubtract(ProtOperateParticles, ProtRelionBase):
     # -------------------------- INFO functions -------------------------------
     def _validate(self):
         errors = []
-        if not self.useAll:
+        if not self.useAll.get():
             self._validateDim(self.inputParticles.get(),
-                              self._getInputParticles().getXDim(),
+                              self._getInputParticles(),
                               errors, 'Input particles subset',
                               'Input particles from 3D protocol')
-        if self.numberOfMpi > 1 and (not self.relionInput.get()):
+        if self.numberOfMpi.get() > 1 and (not self.relionInput.get()):
             errors.append("Use of several CPUs when input is not relion "
                           "protocol is not supported")
 
@@ -310,7 +310,7 @@ class ProtRelionSubtract(ProtOperateParticles, ProtRelionBase):
     
     # -------------------------- UTILS functions ------------------------------
     def _updateItem(self, particle, row):
-        if self.isRelionInput:
+        if self._isRelionInput():
             # FIXME: check if other attrs need saving
             particle._rlnRandomSubset = Integer(row.rlnRandomSubset)
             self.reader.setParticleTransform(particle, row)
@@ -320,11 +320,14 @@ class ProtRelionSubtract(ProtOperateParticles, ProtRelionBase):
         particle.setLocation(newLoc)
 
     def _getInputParticles(self):
-        if self.isRelionInput:
+        if self.relionInput.get():
             inputProt = self.inputProtocol.get()
             return inputProt.outputParticles
         else:
             return self.inputParticlesAll.get()
+
+    def _isRelionInput(self):
+        return getattr(self, "isRelionInput", self.relionInput.get())
 
     def _convertMask(self, invert=False, resize=True):
         tmp = self._getTmpPath()
